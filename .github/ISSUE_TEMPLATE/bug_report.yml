@@ -9,6 +9,18 @@ body:
         感谢反馈。请尽量提供完整的复现路径与日志，便于排查。
         ⚠️ **不要**贴 API key、SESSDATA、密钥等敏感信息。
   - type: dropdown
+    id: severity
+    attributes:
+      label: 严重程度
+      description: 请评估该 Bug 的影响范围
+      options:
+        - critical（系统崩溃/核心功能不可用）
+        - major（功能异常但有绕过方式）
+        - minor（UI 问题/文案错误/边缘场景）
+    validations:
+      required: true
+
+  - type: dropdown
     id: workspace
     attributes:
       label: 受影响的工作区
