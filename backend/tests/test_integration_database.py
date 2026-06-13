@@ -87,7 +87,17 @@ class TestDatabaseInit(unittest.TestCase):
             self.assertIn(expected, tables)
 
     def test_database_file_exists(self):
-        self.assertTrue(os.path.exists(os.path.join(TEST_BASE, "test.db")))
+        # engine URL 中的路径（兼容 conftest 共享临时目录或模块自身 TEST_BASE）
+        engine_url = str(get_engine().url)
+        self.assertTrue(
+            engine_url.startswith("sqlite:///"),
+            f"Expected SQLite URL, got {engine_url}",
+        )
+        # sqlite:///path → path
+        db_path = engine_url[len("sqlite:///"):]
+        if os.name == "nt" and db_path.startswith("/"):
+            db_path = db_path[1:]  # Windows: /C:/... → C:/...
+        self.assertTrue(os.path.exists(db_path), f"DB file not found: {db_path}")
 
     def test_base_metadata_tables(self):
         for name in ["providers", "models", "video_tasks"]:
