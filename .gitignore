@@ -327,3 +327,7 @@ cython_debug/
 # FFmpeg 构建文件（不应该提交到仓库）
 ffmpeg*/
 ffmpg*/
+
+
+# 本地的agent skills文件（不应该提交到仓库）
+/.agents/skills/*
