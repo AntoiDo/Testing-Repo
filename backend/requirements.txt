@@ -128,3 +128,6 @@ youtube-transcript-api>=1.0.0
 yt-dlp==2025.3.31
 zopfli==0.2.3.post1
 pytest>=8.0
+fastapi
+sqlalchemy
+selenium
