@@ -92,6 +92,11 @@ from fastapi.testclient import TestClient
 client = TestClient(app)
 
 
+def setUpModule():
+    """恢复本模块的 DATABASE_URL（可能被字母序靠后的模块覆盖）。"""
+    os.environ["DATABASE_URL"] = f"sqlite:///{TEST_BASE}/test_api.db"
+
+
 def tearDownModule():
     import shutil
     shutil.rmtree(TEST_BASE, ignore_errors=True)
@@ -263,15 +268,15 @@ class TestGenerateNoteAPI(unittest.TestCase):
         self.assertIn(resp.json()["code"], [0, 300102])
 
     def test_invalid_url_format(self):
-        """畸形 URL 会通过请求层校验但 pipeline 中会失败"""
+        """畸形 URL 会通过请求层校验（video_url 是 str 类型即合法），
+        任务被接受（code=0），实际处理在 pipeline 中异步失败。"""
         resp = client.post("/api/generate_note", json={
             "video_url": "not-a-valid-url!@#", "platform": "bilibili",
             "quality": "fast", "model_name": "gpt-4o", "provider_id": "1",
         })
-        # 请求层通过（video_url 是 str 类型），pipeline 返回错误
         self.assertEqual(resp.status_code, 200)
         code = resp.json()["code"]
-        self.assertNotEqual(code, 0)
+        self.assertEqual(code, 0)  # 请求层接受，pipeline 异步处理时失败
 
     def test_unsupported_platform(self):
         """不支持平台：请求层接受但 pipeline 拦截"""

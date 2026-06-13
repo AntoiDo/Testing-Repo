@@ -9,7 +9,8 @@ import unittest
 from pathlib import Path
 
 
-def _install_stubs():
+def _make_stubs():
+    """构建 universal_gpt 测试所需的轻量 stub 模块，避免触发完整 import 链。"""
     app_mod = types.ModuleType("app")
     gpt_pkg = types.ModuleType("app.gpt")
     models_pkg = types.ModuleType("app.models")
@@ -70,31 +71,18 @@ def _install_stubs():
 
     transcriber_model_mod.TranscriptSegment = _TranscriptSegment
 
-    sys.modules.setdefault("app", app_mod)
-    sys.modules.setdefault("app.gpt", gpt_pkg)
-    sys.modules.setdefault("app.models", models_pkg)
-    sys.modules["app.gpt.base"] = base_mod
-    sys.modules["app.gpt.prompt_builder"] = prompt_builder_mod
-    sys.modules["app.gpt.prompt"] = prompt_mod
-    sys.modules["app.gpt.utils"] = utils_mod
-    sys.modules["app.gpt.request_chunker"] = request_chunker_mod
-    sys.modules["app.models.gpt_model"] = gpt_model_mod
-    sys.modules["app.models.transcriber_model"] = transcriber_model_mod
-
-
-def _load_universal_gpt_class():
-    _install_stubs()
-    root = pathlib.Path(__file__).resolve().parents[1]
-    module_path = root / "app" / "gpt" / "universal_gpt.py"
-    spec = importlib.util.spec_from_file_location("universal_gpt", module_path)
-    if spec is None or spec.loader is None:
-        raise ImportError("universal_gpt module spec not found")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module.UniversalGPT
-
-
-UniversalGPT = _load_universal_gpt_class()
+    return {
+        "app": app_mod,
+        "app.gpt": gpt_pkg,
+        "app.models": models_pkg,
+        "app.gpt.base": base_mod,
+        "app.gpt.prompt_builder": prompt_builder_mod,
+        "app.gpt.prompt": prompt_mod,
+        "app.gpt.utils": utils_mod,
+        "app.gpt.request_chunker": request_chunker_mod,
+        "app.models.gpt_model": gpt_model_mod,
+        "app.models.transcriber_model": transcriber_model_mod,
+    }
 
 
 class _FailingCompletions:
@@ -120,10 +108,44 @@ class _DummyClient:
 
 
 class TestUniversalGPTCheckpoint(unittest.TestCase):
+    """测试 UniversalGPT 合并阶段的 checkpoint 持久化。
+
+    使用 setUpClass / tearDownClass 安装和清理 sys.modules 中的 stub 模块，
+    避免污染其他测试文件的 import 命名空间。
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        # 保存原始模块引用，安装轻量 stub
+        cls._originals = {}
+        cls._stubs = _make_stubs()
+        for name, stub_mod in cls._stubs.items():
+            cls._originals[name] = sys.modules.get(name)
+            sys.modules[name] = stub_mod
+
+        # 在 stub 环境中加载 UniversalGPT
+        root = pathlib.Path(__file__).resolve().parents[1]
+        module_path = root / "app" / "gpt" / "universal_gpt.py"
+        spec = importlib.util.spec_from_file_location("universal_gpt", module_path)
+        if spec is None or spec.loader is None:
+            raise ImportError("universal_gpt module spec not found")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        cls.UniversalGPT = module.UniversalGPT
+
+    @classmethod
+    def tearDownClass(cls):
+        # 还原 sys.modules，不影响后续测试文件
+        for name, original in cls._originals.items():
+            if original is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = original
+
     def test_merge_524_error_persists_checkpoint(self):
         original_attempts = os.environ.get("OPENAI_RETRY_ATTEMPTS")
         os.environ["OPENAI_RETRY_ATTEMPTS"] = "1"
-        gpt = UniversalGPT(_DummyClient(), model="mock-model")
+        gpt = self.UniversalGPT(_DummyClient(), model="mock-model")
         try:
             with tempfile.TemporaryDirectory() as tmp_dir:
                 gpt.checkpoint_dir = Path(tmp_dir)

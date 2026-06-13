@@ -2,6 +2,9 @@
 
 DeepSeek deepseek-chat 等非多模态模型只接受 ``content`` 为字符串，旧实现无条件
 emit ``[{"type":"text","text":...}]`` 导致 ``invalid_request_error``。
+
+使用 setUpModule / tearDownModule 安装和清理 sys.modules 中的 stub 模块，
+避免污染其他测试文件的 import 命名空间。
 """
 import importlib.util
 import pathlib
@@ -9,8 +12,12 @@ import sys
 import types
 import unittest
 
+# 在 setUpModule 中设置，测试方法通过模块变量访问
+UniversalGPT = None
 
-def _install_stubs():
+
+def _make_stubs():
+    """构建 universal_gpt 测试所需的轻量 stub 模块。"""
     app_mod = types.ModuleType("app")
     gpt_pkg = types.ModuleType("app.gpt")
     models_pkg = types.ModuleType("app.models")
@@ -71,20 +78,31 @@ def _install_stubs():
 
     transcriber_model_mod.TranscriptSegment = _TranscriptSegment
 
-    sys.modules.setdefault("app", app_mod)
-    sys.modules.setdefault("app.gpt", gpt_pkg)
-    sys.modules.setdefault("app.models", models_pkg)
-    sys.modules["app.gpt.base"] = base_mod
-    sys.modules["app.gpt.prompt_builder"] = prompt_builder_mod
-    sys.modules["app.gpt.prompt"] = prompt_mod
-    sys.modules["app.gpt.utils"] = utils_mod
-    sys.modules["app.gpt.request_chunker"] = request_chunker_mod
-    sys.modules["app.models.gpt_model"] = gpt_model_mod
-    sys.modules["app.models.transcriber_model"] = transcriber_model_mod
+    return {
+        "app": app_mod,
+        "app.gpt": gpt_pkg,
+        "app.models": models_pkg,
+        "app.gpt.base": base_mod,
+        "app.gpt.prompt_builder": prompt_builder_mod,
+        "app.gpt.prompt": prompt_mod,
+        "app.gpt.utils": utils_mod,
+        "app.gpt.request_chunker": request_chunker_mod,
+        "app.models.gpt_model": gpt_model_mod,
+        "app.models.transcriber_model": transcriber_model_mod,
+    }
 
 
-def _load_universal_gpt_class():
-    _install_stubs()
+_originals = {}
+
+
+def setUpModule():
+    """安装 stub 模块并加载 UniversalGPT，仅在当前模块的测试期间生效。"""
+    global UniversalGPT, _originals
+    stubs = _make_stubs()
+    for name, stub_mod in stubs.items():
+        _originals[name] = sys.modules.get(name)
+        sys.modules[name] = stub_mod
+
     root = pathlib.Path(__file__).resolve().parents[1]
     module_path = root / "app" / "gpt" / "universal_gpt.py"
     spec = importlib.util.spec_from_file_location(
@@ -94,10 +112,16 @@ def _load_universal_gpt_class():
         raise ImportError("universal_gpt module spec not found")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    return module.UniversalGPT
+    UniversalGPT = module.UniversalGPT
 
 
-UniversalGPT = _load_universal_gpt_class()
+def tearDownModule():
+    """还原 sys.modules，避免 stub 泄露到后续测试文件。"""
+    for name, original in _originals.items():
+        if original is None:
+            sys.modules.pop(name, None)
+        else:
+            sys.modules[name] = original
 
 
 class _DummyClient:

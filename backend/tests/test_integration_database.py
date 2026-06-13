@@ -19,10 +19,6 @@ _ffmpeg_mod = types.ModuleType("ffmpeg")
 _ffmpeg_mod.probe = lambda *_args, **_kwargs: {"format": {"duration": "0"}}
 sys.modules["ffmpeg"] = _ffmpeg_mod
 
-_fastapi_mod = types.ModuleType("fastapi")
-_fastapi_mod.FastAPI = type("FakeFastAPI", (), {})
-sys.modules["fastapi"] = _fastapi_mod
-
 _routers = types.ModuleType("app.routers")
 for _name in ("note", "provider", "model", "config", "chat"):
     _mod = types.ModuleType(f"app.routers.{_name}")
@@ -65,6 +61,8 @@ from app.db.video_task_dao import insert_video_task, get_task_by_video, delete_t
 
 
 def setUpModule():
+    # 恢复本模块的 DATABASE_URL（可能被字母序靠后的模块覆盖）
+    os.environ["DATABASE_URL"] = f"sqlite:///{TEST_BASE}/test.db"
     init_db()
 
 

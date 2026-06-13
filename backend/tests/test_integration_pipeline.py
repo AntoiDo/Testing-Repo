@@ -27,13 +27,6 @@ _ffmpeg_mod = types.ModuleType("ffmpeg")
 _ffmpeg_mod.probe = lambda *_args, **_kwargs: {"format": {"duration": "120.0"}}
 sys.modules["ffmpeg"] = _ffmpeg_mod
 
-_fastapi_mod = types.ModuleType("fastapi")
-_fastapi_mod.FastAPI = type("FakeFastAPI", (), {})
-_fastapi_mod.encoders = types.ModuleType("fastapi.encoders")
-_fastapi_mod.encoders.jsonable_encoder = lambda x, **kw: x
-sys.modules["fastapi"] = _fastapi_mod
-sys.modules["fastapi.encoders"] = _fastapi_mod.encoders
-
 _routers = types.ModuleType("app.routers")
 for _name in ("note", "provider", "model", "config", "chat"):
     _mod = types.ModuleType(f"app.routers.{_name}")
@@ -79,6 +72,11 @@ from app.exceptions.note import NoteError
 from app.models.audio_model import AudioDownloadResult
 from app.models.transcriber_model import TranscriptResult, TranscriptSegment
 from app.models.notes_model import NoteResult
+
+
+def setUpModule():
+    """恢复本模块的 DATABASE_URL（可能被字母序靠后的模块覆盖）。"""
+    os.environ["DATABASE_URL"] = f"sqlite:///{TEST_BASE}/test.db"
 
 
 def tearDownModule():
