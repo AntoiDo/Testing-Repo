@@ -5,16 +5,17 @@
   - SQLite 数据库初始化（建表）
   - Provider/Model/VideoTask CRUD 操作
   - 数据一致性
+
+注意：数据库隔离由 conftest.py 管理，不要在此文件中重复设置 DATABASE_URL。
 """
 
 import os
 import sys
-import tempfile
 import types
 import unittest
 from pathlib import Path
 
-# --- stub 重型依赖 ---
+# --- stub 重型依赖（必须在导入 app 之前设置）---
 _ffmpeg_mod = types.ModuleType("ffmpeg")
 _ffmpeg_mod.probe = lambda *_args, **_kwargs: {"format": {"duration": "0"}}
 sys.modules["ffmpeg"] = _ffmpeg_mod
@@ -39,17 +40,10 @@ _logger_mod.get_logger = lambda _n: type("_Logger", (), {
 })()
 sys.modules["app.utils.logger"] = _logger_mod
 
-# 测试专用数据库
-TEST_BASE = tempfile.mkdtemp(prefix="bilinote_int_db_")
-os.environ["DATABASE_URL"] = f"sqlite:///{TEST_BASE}/test.db"
-os.environ["DATA_DIR"] = os.path.join(TEST_BASE, "data")
-os.environ["OUT_DIR"] = os.path.join(TEST_BASE, "screenshots")
-os.environ["NOTE_OUTPUT_DIR"] = os.path.join(TEST_BASE, "notes")
-for _d in ["DATA_DIR", "OUT_DIR", "NOTE_OUTPUT_DIR"]:
-    os.makedirs(os.environ[_d], exist_ok=True)
-
+# 添加 backend 路径
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+# 导入 app 模块（此时 conftest.py 已设置好环境变量）
 from app.db.engine import get_engine, Base
 from app.db.init_db import init_db
 from app.db.models.models import Model as ModelTable
@@ -64,17 +58,13 @@ from app.db.model_dao import insert_model, get_models_by_provider, delete_model,
 from app.db.video_task_dao import insert_video_task, get_task_by_video, delete_task_by_video
 
 
-def setUpModule():
-    init_db()
-
-
-def tearDownModule():
-    import shutil
-    shutil.rmtree(TEST_BASE, ignore_errors=True)
-
-
 class TestDatabaseInit(unittest.TestCase):
     """数据库初始化验证"""
+
+    @classmethod
+    def setUpClass(cls):
+        # 初始化数据库（由 conftest.py 管理路径）
+        init_db()
 
     def test_engine_created(self):
         self.assertIsNotNone(get_engine())
@@ -87,7 +77,10 @@ class TestDatabaseInit(unittest.TestCase):
             self.assertIn(expected, tables)
 
     def test_database_file_exists(self):
-        self.assertTrue(os.path.exists(os.path.join(TEST_BASE, "test.db")))
+        # 验证数据库文件存在（不依赖特定路径）
+        engine = get_engine()
+        db_path = str(engine.url.database)
+        self.assertTrue(os.path.exists(db_path), f"Database file not found: {db_path}")
 
     def test_base_metadata_tables(self):
         for name in ["providers", "models", "video_tasks"]:
@@ -99,7 +92,7 @@ class TestProviderCRUD(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        # 清空 providers
+        # 清空 providers（使用当前数据库）
         from app.db.engine import get_db
         db = next(get_db())
         try:

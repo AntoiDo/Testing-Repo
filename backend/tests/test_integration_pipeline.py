@@ -12,17 +12,18 @@
   - 阶段5：数据库任务入库 → 查询 → 删除
   - 异常路径：超时、格式错误、不支持平台
   - 系统架构完整性验证
+
+注意：数据库隔离由 conftest.py 管理，不要在此文件中重复设置 DATABASE_URL。
 """
 
 import json
 import os
 import sys
-import tempfile
 import types
 import unittest
 from pathlib import Path
 
-# --- stub ---
+# --- stub（必须在导入 app 之前设置）---
 _ffmpeg_mod = types.ModuleType("ffmpeg")
 _ffmpeg_mod.probe = lambda *_args, **_kwargs: {"format": {"duration": "120.0"}}
 sys.modules["ffmpeg"] = _ffmpeg_mod
@@ -58,16 +59,10 @@ _blinker_mod.Namespace = lambda: type("FakeNS", (), {
 })()
 sys.modules["blinker"] = _blinker_mod
 
-TEST_BASE = tempfile.mkdtemp(prefix="bilinote_pipe_")
-os.environ["DATABASE_URL"] = f"sqlite:///{TEST_BASE}/test.db"
-os.environ["DATA_DIR"] = os.path.join(TEST_BASE, "data")
-os.environ["OUT_DIR"] = os.path.join(TEST_BASE, "screenshots")
-os.environ["NOTE_OUTPUT_DIR"] = os.path.join(TEST_BASE, "notes")
-for _d in ["DATA_DIR", "OUT_DIR", "NOTE_OUTPUT_DIR"]:
-    os.makedirs(os.environ[_d], exist_ok=True)
-
+# 添加 backend 路径
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+# 导入 app 模块（此时 conftest.py 已设置好环境变量）
 from app.db.engine import get_db
 from app.db.init_db import init_db
 from app.services.constant import SUPPORT_PLATFORM_MAP
@@ -79,11 +74,6 @@ from app.exceptions.note import NoteError
 from app.models.audio_model import AudioDownloadResult
 from app.models.transcriber_model import TranscriptResult, TranscriptSegment
 from app.models.notes_model import NoteResult
-
-
-def tearDownModule():
-    import shutil
-    shutil.rmtree(TEST_BASE, ignore_errors=True)
 
 
 # ================================================================
@@ -299,8 +289,11 @@ class TestPipelineStage4NoteGenerator(unittest.TestCase):
 class TestPipelineStage5Database(unittest.TestCase):
     """阶段5：任务入库 → 查询 → 删除"""
 
-    def setUp(self):
+    @classmethod
+    def setUpClass(cls):
+        # 初始化数据库（由 conftest.py 管理路径）
         init_db()
+        # 清空 video_tasks
         from app.db.models.video_tasks import VideoTask
         db = next(get_db())
         try:

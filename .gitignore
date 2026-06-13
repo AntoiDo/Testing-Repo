@@ -168,6 +168,10 @@ MANIFEST
 *.manifest
 *.spec
 
+# Local CI virtual environments
+.venv-ci/
+.venv-ci-quick/
+
 # Installer logs
 pip-log.txt
 pip-delete-this-directory.txt
@@ -327,3 +331,7 @@ cython_debug/
 # FFmpeg 构建文件（不应该提交到仓库）
 ffmpeg*/
 ffmpg*/
+
+
+# 我的skill文件
+/.agents/skills/*
